@@ -1,0 +1,6 @@
+﻿*log
+build/
+.idea/
+node_modules/
+my_notes.txt
+.git/logs/
