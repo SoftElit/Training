@@ -4,102 +4,123 @@
 Результат ее выполнения: прочитать файл $a и импортировать его в созданную БД.
 */
 
-//Подключаем скрипт подключения к серверу БД
-require_once "connectMySql.php";
+function importXml($a)
+{
 
-//Проверяем подключение к серверу БД и отправляем SQL запрос
+	//Подключаем скрипт подключения к серверу БД
+	require_once "connectMySql.php";
 
-if(mysqli_connect_errno()) {
-	echo mysqli_connect_error();
-} else {
+	//Проверяем подключение к серверу БД и отправляем SQL запрос
 
-	/* Выбираем загружаемый файл (Путь к XML-файлу)
-	simplexml_load_file — Интерпретирует XML-файл в объект. */
-	$sxml = simplexml_load_file('samson1.xml');
+	if(mysqli_connect_errno()) {
+		echo mysqli_connect_error();
+	} else {
 
-	//Получаем из созданного объекта XML-файла код товара и прочие параметры, сохраняя их в переменных
-	foreach($sxml->Товар as $product) {
-		$art = stripslashes($product['Код']);
-		$name = stripslashes($product['Название']);
+		/* Выбираем загружаемый файл (Путь к XML-файлу)
+		simplexml_load_file — Интерпретирует XML-файл в объект. */
+		$sxml = simplexml_load_file($a);																					//<ТОВАРЫ>
 
-		foreach($product as $description) {
-			
-			switch((string) $description['Тип']) { // Получение атрибутов элемента по индексу
-			case 'Базовая':
-				$priceBase = stripslashes($description);
-			case 'Москва':
-				$priceMoscow = stripslashes($description);
-			}		
-			
-			switch((string) $description->Плотность) { // Получение атрибутов элемента по индексу
-			case true:
-				$density = stripslashes($description->Плотность);
-			}
-		
-			switch((string) $description->Белизна['ЕдИзм']) { // Получение атрибутов элемента по индексу
-			case '%':
-				$white = stripslashes($description->Белизна);
-			}
+		//Получаем из созданного объекта XML-файла код товара и прочие параметры, сохраняя их в переменных
+		foreach($sxml as $product) {																						//<ТОВАР>
+			$art = stripslashes($product['Код']);
+			$name = stripslashes($product['Название']);
 
-			switch((string) $description->Формат) { // Получение атрибутов элемента по индексу
-			case true:
-/*
-				foreach($description->Формат as $format) {
-					$printerFormat[] = $description->Формат;
+			foreach($product as $description) {																				//<ЦЕНА, СВОЙСТВА, РАЗДЕЛЫ>
+				
+				switch((string) $description['Тип']) { // Получение атрибутов элемента по индексу
+				case 'Базовая':
+					$priceBase = stripslashes($description);
+				case 'Москва':
+					$priceMoscow = stripslashes($description);
 				}
-*/
-				$printerFormat = stripslashes($description->Формат);
-			}
-/*
-			foreach($description->Формат as $format) {
-			switch($format) { // Получение атрибутов элемента по индексу
-			case true:
-				$printerFormat[] = $format;
-			}
-			}
-*/
-			switch((string) $description->Тип) { // Получение атрибутов элемента по индексу
-			case true:
-				$printerType = stripslashes($description->Тип);
-			}
 
-			switch((string) $description->Раздел) { // Получение атрибутов элемента по индексу
-			case true:
-				$section = stripslashes($description->Раздел);
-			}
-		};	
+				switch((string) $description->children()->getName()) { // Получение атрибутов элемента по индексу
+				case 'Плотность':
+					$density = stripslashes($description->children());
+					
+					$result = mysqli_query(
+					$connect,		
+					"INSERT INTO `test_samson`.`a_property` (`товар`, `свойство`, `значение свойства`) 
+					VALUES ('$name', 'Плотность', '$density')
+					;");
+				}
+		
+				switch((string) $description->Белизна['ЕдИзм']) { // Получение атрибутов элемента по индексу
+				case '%':
+					$white = stripslashes($description->children());
+					
+					$result = mysqli_query(
+					$connect,		
+					"INSERT INTO `test_samson`.`a_property` (`товар`, `свойство`, `значение свойства`) 
+					VALUES ('$name', 'Белизна ЕдИзм=%', '$white')
+					;");
+				}
 
-		$result = mysqli_query(
-		$connect,
-		"INSERT INTO `test_samson`.`a_product` (`код`, `название`) 
-		VALUES ('$art', '$name')
-		;");
+				switch((string) $description->Тип) { // Получение атрибутов элемента по индексу
+				case true:
+					$printerType = stripslashes($description->Тип);
+					
+					$result = mysqli_query(
+					$connect,		
+					"INSERT INTO `test_samson`.`a_property` (`товар`, `свойство`, `значение свойства`) 
+					VALUES 
+					('$name', 'Тип', '$printerType')
+					;");
+				}
+				
+				switch((string) $description->Раздел) { // Получение атрибутов элемента по индексу
+					case true:
+					foreach($description as $sections) {
+						$section = $sections;
+						
+						//ВАЖНО!!! Нужно либо указывать в `parent_id` уже загруженный в БД `id` реально существующей категории, либо вообще НЕ загружать `parent_id` (то есть убрать этот параметр из маски INSERT INTO...)
+						$result = mysqli_query(
+						$connect, 
+						"INSERT INTO `test_samson`.`a_category` (`код`, `название`) 
+						VALUES ('$art', '$section')
+						;");
+					}
+				}
+				
+				switch((string) $description->Формат) { // Получение атрибутов элемента по индексу
+					case true:
+					foreach($description->Формат as $printerFormats) {
+						$printerFormat = $printerFormats;
+						
+						$result = mysqli_query(
+						$connect,		
+						"INSERT INTO `test_samson`.`a_property` (`товар`, `свойство`, `значение свойства`) 
+						VALUES 
+						('$name', 'Формат', '$printerFormat')
+						;");
 
-		$result = mysqli_query(
-		$connect,		
-		"INSERT INTO `test_samson`.`a_ price` (`товар`, `тип цены`, `цена`) 
-		VALUES ('$name', 'Базовая', '$priceBase'),
-		('$name', 'Москва', '$priceMoscow')
-		;");
+					}
+				}
 
-		$result = mysqli_query(
-		$connect,		
-		"INSERT INTO `test_samson`.`a_property` (`товар`, `свойство`, `значение свойста`) 
-		VALUES ('$name', 'Плотность', '$density'),
-		('$name', 'Белизна ЕдИзм=%', '$white'),
-		('$name', 'Формат', '$printerFormat'),
-		('$name', 'Тип', '$printerType')
-		;");
+				
+			};	
 
-		$result = mysqli_query(
-		$connect, 
-		"INSERT INTO `test_samson`.`a_category` (`код`, `название`, `parent_id`) 
-		VALUES ('$art', '$section', '0')
-		;");
+			$result = mysqli_query(
+			$connect,
+			"INSERT INTO `test_samson`.`a_product` (`код`, `название`) 
+			VALUES ('$art', '$name')
+			;");
 
-	}
+			$result = mysqli_query(
+			$connect,		
+			"INSERT INTO `test_samson`.`a_price` (`товар`, `тип цены`, `цена`) 
+			VALUES ('$name', 'Базовая', '$priceBase'),
+			('$name', 'Москва', '$priceMoscow')
+			;");
+
+		}
+	};
+
+
+	//Закрываем подключение к серверу БД
+	mysqli_close($connect);
 };
 
-
-//Закрываем подключение к серверу БД
-mysqli_close($connect);
+//Вызов функции
+$a = 'samson1.xml';
+importXml($a);
